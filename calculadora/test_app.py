@@ -46,6 +46,24 @@ def test_invalid_params(client):
     assert "error" in resp.get_json()
 
 
+def test_divide_get(client):
+    resp = client.get("/divide?a=10&b=2")
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 5.0
+
+
+def test_divide_post(client):
+    resp = client.post("/divide", json={"a": 9, "b": 3})
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 3.0
+
+
+def test_divide_by_zero(client):
+    resp = client.get("/divide?a=5&b=0")
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
