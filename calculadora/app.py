@@ -51,8 +51,7 @@ def multiply_endpoint():
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    return jsonify({"a": a, "b": b, "operation": "multiply", "result": a * b})
-
+    return jsonify({"a": a, "b": b, "operation": "multiply", "result": a - b})
 
 @app.route("/health", methods=["GET"])
 def health():
