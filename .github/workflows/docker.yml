@@ -3,6 +3,7 @@ name: Build and Push Docker Image (Frontend)
 # ============================================================
 # Estrategia de tags (Gitflow con soporte hotfix):
 #
+#   PR -> develop/main -> job `test`     : pytest, corre ANTES de mergear (gate manual pa pruebas)
 #   develop/hotfix -> job `test`        : pytest sobre calculadora/, gate previo al build
 #   develop      -> job `build`         : develop + sha-<short>         (build real)
 #   hotfix/**    -> job `build-hotfix`  : sha-<short> unicamente        (build real, SIN tag flotante)
@@ -30,6 +31,10 @@ on:
       - develop
       - main
       - 'hotfix/**'
+  pull_request:
+    branches:
+      - develop
+      - main
   release:
     types: [published]
 
@@ -45,7 +50,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   test:
     name: Test (calculadora)
-    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/')
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
