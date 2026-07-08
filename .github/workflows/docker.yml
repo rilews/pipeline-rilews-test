@@ -57,6 +57,10 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 = historial completo. SonarCloud lo necesita para
+          # calcular "New Code" (diff contra la base del PR / rama anterior).
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -67,9 +71,26 @@ jobs:
         working-directory: ./calculadora
         run: pip install -r requirements-dev.txt
 
-      - name: Run tests
+      # --cov-report=xml genera calculadora/coverage.xml, que sonar-project.properties
+      # apunta via sonar.python.coverage.reportPaths para que SonarCloud lea cobertura real.
+      - name: Run tests with coverage
         working-directory: ./calculadora
-        run: pytest -v
+        run: pytest -v --cov=. --cov-report=xml
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # Espera el resultado del Quality Gate y falla el job si no pasa
+      # (ej. cobertura en new code < 80%, definido en SonarCloud, no aqui).
+      # Al fallar este mismo job "Test (calculadora)", el check requerido
+      # en branch protection ya cubre el gate sin configurar nada aparte.
+      - name: SonarCloud Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # ──────────────────────────────────────────────────────────────────────────
   # JOB 1: build -> push a develop
