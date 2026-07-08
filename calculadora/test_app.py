@@ -45,6 +45,16 @@ def test_invalid_params(client):
     assert resp.status_code == 400
     assert "error" in resp.get_json()
 
+def test_multiply_get(client):
+    resp = client.get("/multiply?a=5&b=3")
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 15.0
+
+
+def test_multiply_post(client):
+    resp = client.post("/multiply", json={"a": 4, "b": 6})
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 24.0
 
 def test_health(client):
     resp = client.get("/health")
