@@ -35,7 +35,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/ufro-itp-corfo/rilews-front
+  IMAGE: ghcr.io/rilews/pipeline-rilews-test
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
