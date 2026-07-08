@@ -1,0 +1,18 @@
+CLAUDE.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+venv/
+env/
+.venv/
+
+# Env files
+.env
+!.env.example
+
+# Editor
+.vscode/
+.idea/
