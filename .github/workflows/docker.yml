@@ -1,0 +1,256 @@
+name: Build and Push Docker Image (Frontend)
+
+# ============================================================
+# Estrategia de tags (Gitflow con soporte hotfix):
+#
+#   PR -> develop/main -> job `test`     : pytest, corre ANTES de mergear
+#   develop/hotfix -> job `test`        : pytest sobre calculadora/, gate previo al build
+#   develop      -> job `build`         : develop + sha-<short>         (build real)
+#   hotfix/**    -> job `build-hotfix`  : sha-<short> unicamente        (build real, SIN tag flotante)
+#   main         -> job `promote`       : latest + sha-<merge-commit>   (promueve SIN rebuild)
+#                                          origen: sha-<HEAD^2> = tip de la rama mergeada
+#   release      -> job `release`       : vX.Y.Z + X.Y.Z                (promueve desde :latest, SIN rebuild)
+#
+# FIX respecto al workflow original:
+#   El job `promote` ya NO asume que el origen es siempre ":develop".
+#   Un hotfix se mergea a main SIN pasar por develop, asi que la imagen
+#   ":develop" puede no contener el fix (o contener codigo distinto/no
+#   probado). Promover ese tag a ciegas publicaria lo incorrecto en prod.
+#
+#   Solucion: leer el segundo padre del merge commit (HEAD^2). En un merge
+#   commit estandar (no squash, no rebase), HEAD^1 es el ultimo commit de
+#   main y HEAD^2 es SIEMPRE el tip de la rama que se mergeo (develop o
+#   hotfix/xxx). Esa rama ya subio su imagen como ":sha-<HEAD^2>" (jobs
+#   `build` o `build-hotfix`), asi que se promueve ese manifest puntual
+#   en vez de un tag flotante fijo.
+# ============================================================
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - develop
+      - main
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/rilews/pipeline-rilews-test
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 0: test -> corre en develop y hotfix/**, antes de buildear imagen
+  # Gate de CI real: si los tests fallan, `build`/`build-hotfix` no corren
+  # (needs: test) y nunca se sube una imagen rota al registry.
+  # ──────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (calculadora)
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: ./calculadora
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: ./calculadora
+        run: pytest -v
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 1: build -> push a develop
+  # Build real desde Dockerfile (target: prod). Tags: develop + sha-<short>
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Push (develop)
+    if: github.ref == 'refs/heads/develop'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./calculadora
+          file: ./calculadora/Dockerfile
+          target: prod
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:develop
+            ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2: build-hotfix -> push a cualquier hotfix/**
+  # Mismo build real que `build`, pero SOLO con tag sha-<short>.
+  # No lleva tag flotante propio (no existe ":hotfix"): la rama hotfix es
+  # efimera, solo importa su commit puntual para poder promoverlo despues.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-hotfix:
+    name: Build & Push (hotfix)
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./calculadora
+          file: ./calculadora/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha,scope=hotfix
+          cache-to: type=gha,mode=max,scope=hotfix
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 3: promote -> push a main (resultado de un merge commit)
+  #
+  # Aqui esta el fix. Ver bloque de comentarios del encabezado para el
+  # razonamiento completo; resumen operativo:
+  #   1. HEAD^2 = tip de la rama mergeada (develop o hotfix/xxx)
+  #   2. HEAD    = el propio merge commit en main
+  #   3. Se copia el manifest sha-<HEAD^2> -> :latest y :sha-<HEAD>
+  # ──────────────────────────────────────────────────────────────────────────
+  promote:
+    name: Promote to production (main)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout con historial suficiente
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 = historial completo. Un checkout superficial
+          # (depth 1, default) solo trae el merge commit, SIN sus padres,
+          # y HEAD^2 no existiria localmente.
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolver origen real del merge (HEAD^2) y merge commit (HEAD)
+        id: merge
+        run: |
+          # HEAD^2: segundo padre del merge commit = tip de la rama
+          # mergeada. Con merges siempre "merge commit" (nunca squash/
+          # rebase) esto es fiable tanto para develop -> main como para
+          # hotfix/xxx -> main.
+          #
+          # Fallback: si el push a main no vino de un merge commit
+          # (ej. commit directo por bypass de branch protection),
+          # HEAD^2 no existe; se usa HEAD para no romper el pipeline.
+          if git rev-parse --verify -q HEAD^2 > /dev/null; then
+            echo "source=$(git rev-parse --short HEAD^2)" >> "$GITHUB_OUTPUT"
+          else
+            echo "source=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+          echo "merge=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Promover imagen (sin rebuild)
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE }}:latest \
+            --tag ${{ env.IMAGE }}:sha-${{ steps.merge.outputs.merge }} \
+            ${{ env.IMAGE }}:sha-${{ steps.merge.outputs.source }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 4: release -> evento release published
+  # Sin rebuild. Copia manifest :latest -> :vX.Y.Z y :X.Y.Z
+  # ──────────────────────────────────────────────────────────────────────────
+  release:
+    name: Tag release
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # vX.Y.Z (con 'v', igual al tag de GitHub) y X.Y.Z (semver puro,
+      # convencion Docker) a partir de github.ref_name.
+      - name: Extraer version semver
+        id: semver
+        run: |
+          RAW="${GITHUB_REF_NAME}"          # ej: v1.2.3
+          echo "vtag=${RAW}" >> "$GITHUB_OUTPUT"
+          echo "tag=${RAW#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag release (copia manifest desde :latest)
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE }}:${{ steps.semver.outputs.vtag }} \
+            --tag ${{ env.IMAGE }}:${{ steps.semver.outputs.tag }} \
+            ${{ env.IMAGE }}:latest
