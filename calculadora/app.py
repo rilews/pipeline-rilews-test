@@ -45,6 +45,15 @@ def subtract_endpoint():
     return jsonify({"a": a, "b": b, "operation": "subtract", "result": a - b})
 
 
+@app.route("/multiply", methods=["GET", "POST"])
+def multiply_endpoint():
+    a, b, error = _get_operands()
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    return jsonify({"a": a, "b": b, "operation": "multiply", "result": a * b})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
