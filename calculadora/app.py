@@ -61,7 +61,7 @@ def divide_endpoint():
         message, status = error
         return jsonify({"error": message}), status
     if b == 0:
-        return jsonify({"error": "Cannot divide by zero"}), 400
+        return jsonify({"error": "Cannot divide by zeros"}), 400
     return jsonify({"a": a, "b": b, "operation": "divide", "result": a / b})
 
 
