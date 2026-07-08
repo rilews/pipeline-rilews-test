@@ -82,20 +82,59 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      # DEBUG temporal: muestra a que URL/host apunta el analysisId generado
-      # por el scan, para diagnosticar el 403 del quality-gate. Sacar despues.
-      - name: Debug report-task.txt
-        run: cat .scannerwork/report-task.txt
-
       # Espera el resultado del Quality Gate y falla el job si no pasa
       # (ej. cobertura en new code < 80%, definido en SonarCloud, no aqui).
       # Al fallar este mismo job "Test (calculadora)", el check requerido
       # en branch protection ya cubre el gate sin configurar nada aparte.
+      #
+      # NO se usa la accion oficial SonarSource/sonarqube-quality-gate-action:
+      # su script pega con curl sin User-Agent propio, y SonarCloud (via
+      # Cloudflare) devuelve 403 a ese curl "pelado" en /api/ce/task y
+      # /api/qualitygates/project_status (el scanner si manda su propio
+      # User-Agent y por eso el scan en si nunca fallo). Es un bug conocido
+      # de esa accion, ya deprecada. Reimplementamos el mismo polling a mano
+      # con Bearer auth + User-Agent explicito.
       - name: SonarCloud Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          metadataFile=".scannerwork/report-task.txt"
+          ceTaskUrl="$(sed -n 's/^ceTaskUrl=//p' "$metadataFile")"
+          serverUrl="$(sed -n 's/^serverUrl=//p' "$metadataFile")"
+          userAgent="github-actions-quality-gate-check/1.0"
+
+          status="PENDING"
+          task="{}"
+          for _ in $(seq 1 30); do
+            task="$(curl --silent --show-error --fail \
+              --user-agent "$userAgent" \
+              -H "Authorization: Bearer ${SONAR_TOKEN}" \
+              "$ceTaskUrl")"
+            status="$(jq -r '.task.status' <<< "$task")"
+            if [[ "$status" != "PENDING" && "$status" != "IN_PROGRESS" ]]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [[ "$status" != "SUCCESS" ]]; then
+            echo "El analisis de SonarCloud termino con estado: $status"
+            exit 1
+          fi
+
+          analysisId="$(jq -r '.task.analysisId' <<< "$task")"
+          gate="$(curl --silent --show-error --fail \
+            --user-agent "$userAgent" \
+            -H "Authorization: Bearer ${SONAR_TOKEN}" \
+            "${serverUrl}/api/qualitygates/project_status?analysisId=${analysisId}")"
+          gateStatus="$(jq -r '.projectStatus.status' <<< "$gate")"
+
+          echo "Quality Gate status: $gateStatus"
+          if [[ "$gateStatus" != "OK" ]]; then
+            exit 1
+          fi
 
   # ──────────────────────────────────────────────────────────────────────────
   # JOB 1: build -> push a develop
