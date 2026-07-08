@@ -132,10 +132,18 @@ jobs:
           fi
 
           analysisId="$(jq -r '.task.analysisId' <<< "$task")"
-          gate="$(curl --silent --show-error --fail \
+          echo "analysisId=$analysisId"
+          gate_http_code="$(curl --silent --show-error \
             --user-agent "$userAgent" \
             -H "Authorization: Bearer ${SONAR_TOKEN}" \
+            -o /tmp/gate.json -w '%{http_code}' \
             "${serverUrl}/api/qualitygates/project_status?analysisId=${analysisId}")"
+          gate="$(cat /tmp/gate.json)"
+          if [[ "$gate_http_code" != "200" ]]; then
+            echo "HTTP $gate_http_code al consultar quality gate"
+            echo "Body: $gate"
+            exit 1
+          fi
           gateStatus="$(jq -r '.projectStatus.status' <<< "$gate")"
 
           echo "Quality Gate status: $gateStatus"
