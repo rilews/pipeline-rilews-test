@@ -3,6 +3,7 @@ name: Build and Push Docker Image (Frontend)
 # ============================================================
 # Estrategia de tags (Gitflow con soporte hotfix):
 #
+#   develop/hotfix -> job `test`        : pytest sobre calculadora/, gate previo al build
 #   develop      -> job `build`         : develop + sha-<short>         (build real)
 #   hotfix/**    -> job `build-hotfix`  : sha-<short> unicamente        (build real, SIN tag flotante)
 #   main         -> job `promote`       : latest + sha-<merge-commit>   (promueve SIN rebuild)
@@ -38,12 +39,41 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
+  # JOB 0: test -> corre en develop y hotfix/**, antes de buildear imagen
+  # Gate de CI real: si los tests fallan, `build`/`build-hotfix` no corren
+  # (needs: test) y nunca se sube una imagen rota al registry.
+  # ──────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (calculadora)
+    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: ./calculadora
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: ./calculadora
+        run: pytest -v
+
+  # ──────────────────────────────────────────────────────────────────────────
   # JOB 1: build -> push a develop
   # Build real desde Dockerfile (target: prod). Tags: develop + sha-<short>
   # ──────────────────────────────────────────────────────────────────────────
   build:
     name: Build & Push (develop)
     if: github.ref == 'refs/heads/develop'
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -88,6 +118,7 @@ jobs:
   build-hotfix:
     name: Build & Push (hotfix)
     if: startsWith(github.ref, 'refs/heads/hotfix/')
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
