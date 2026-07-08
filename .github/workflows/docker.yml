@@ -108,10 +108,17 @@ jobs:
           status="PENDING"
           task="{}"
           for _ in $(seq 1 30); do
-            task="$(curl --silent --show-error --fail \
+            http_code="$(curl --silent --show-error \
               --user-agent "$userAgent" \
               -H "Authorization: Bearer ${SONAR_TOKEN}" \
+              -o /tmp/ce_task.json -w '%{http_code}' \
               "$ceTaskUrl")"
+            task="$(cat /tmp/ce_task.json)"
+            if [[ "$http_code" != "200" ]]; then
+              echo "HTTP $http_code al consultar $ceTaskUrl"
+              echo "Body: $task"
+              exit 1
+            fi
             status="$(jq -r '.task.status' <<< "$task")"
             if [[ "$status" != "PENDING" && "$status" != "IN_PROGRESS" ]]; then
               break
