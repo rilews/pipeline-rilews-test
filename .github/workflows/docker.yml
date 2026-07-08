@@ -99,8 +99,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./calculadora
+          file: ./calculadora/Dockerfile
           target: prod
           push: true
           tags: |
@@ -144,8 +144,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./calculadora
+          file: ./calculadora/Dockerfile
           target: prod
           push: true
           tags: ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
