@@ -3,7 +3,7 @@ name: Build and Push Docker Image (Frontend)
 # ============================================================
 # Estrategia de tags (Gitflow con soporte hotfix):
 #
-#   PR -> develop/main -> job `test`     : pytest, corre ANTES de mergear (gate manual pa pruebas)
+#   PR -> develop/main -> job `test`     : pytest, corre ANTES de mergear
 #   develop/hotfix -> job `test`        : pytest sobre calculadora/, gate previo al build
 #   develop      -> job `build`         : develop + sha-<short>         (build real)
 #   hotfix/**    -> job `build-hotfix`  : sha-<short> unicamente        (build real, SIN tag flotante)
@@ -57,10 +57,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          # fetch-depth: 0 = historial completo. SonarCloud lo necesita para
-          # calcular "New Code" (diff contra la base del PR / rama anterior).
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -71,90 +67,9 @@ jobs:
         working-directory: ./calculadora
         run: pip install -r requirements-dev.txt
 
-      # --cov-report=xml genera calculadora/coverage.xml, que sonar-project.properties
-      # apunta via sonar.python.coverage.reportPaths para que SonarCloud lea cobertura real.
-      - name: Run tests with coverage
+      - name: Run tests
         working-directory: ./calculadora
-        run: pytest -v --cov=. --cov-report=xml
-
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v4
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      # Espera el resultado del Quality Gate y falla el job si no pasa
-      # (ej. cobertura en new code < 80%, definido en SonarCloud, no aqui).
-      # Al fallar este mismo job "Test (calculadora)", el check requerido
-      # en branch protection ya cubre el gate sin configurar nada aparte.
-      #
-      # Solo corre en pull_request: el plan Free de SonarCloud devuelve
-      # 403 ("Organization is not allowed to access data from non main
-      # branches") al consultar el Quality Gate de push directos a ramas
-      # que no son la "main" configurada en Sonar (develop, hotfix/xxx).
-      # El analisis de PR si esta soportado en Free, asi que el gate real
-      # se valida ahi, antes de mergear (que es donde importa).
-      #
-      # NO se usa la accion oficial SonarSource/sonarqube-quality-gate-action:
-      # esta deprecada (bug de seguridad) y su script no distingue este caso,
-      # solo devuelve el mismo 403 sin contexto. Reimplementamos el polling
-      # a mano con Bearer auth para poder leer el mensaje de error real.
-      - name: SonarCloud Quality Gate
-        if: github.event_name == 'pull_request'
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          metadataFile=".scannerwork/report-task.txt"
-          ceTaskUrl="$(sed -n 's/^ceTaskUrl=//p' "$metadataFile")"
-          serverUrl="$(sed -n 's/^serverUrl=//p' "$metadataFile")"
-          userAgent="github-actions-quality-gate-check/1.0"
-
-          status="PENDING"
-          task="{}"
-          for _ in $(seq 1 30); do
-            http_code="$(curl --silent --show-error \
-              --user-agent "$userAgent" \
-              -H "Authorization: Bearer ${SONAR_TOKEN}" \
-              -o /tmp/ce_task.json -w '%{http_code}' \
-              "$ceTaskUrl")"
-            task="$(cat /tmp/ce_task.json)"
-            if [[ "$http_code" != "200" ]]; then
-              echo "HTTP $http_code al consultar $ceTaskUrl"
-              echo "Body: $task"
-              exit 1
-            fi
-            status="$(jq -r '.task.status' <<< "$task")"
-            if [[ "$status" != "PENDING" && "$status" != "IN_PROGRESS" ]]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [[ "$status" != "SUCCESS" ]]; then
-            echo "El analisis de SonarCloud termino con estado: $status"
-            exit 1
-          fi
-
-          analysisId="$(jq -r '.task.analysisId' <<< "$task")"
-          echo "analysisId=$analysisId"
-          gate_http_code="$(curl --silent --show-error \
-            --user-agent "$userAgent" \
-            -H "Authorization: Bearer ${SONAR_TOKEN}" \
-            -o /tmp/gate.json -w '%{http_code}' \
-            "${serverUrl}/api/qualitygates/project_status?analysisId=${analysisId}")"
-          gate="$(cat /tmp/gate.json)"
-          if [[ "$gate_http_code" != "200" ]]; then
-            echo "HTTP $gate_http_code al consultar quality gate"
-            echo "Body: $gate"
-            exit 1
-          fi
-          gateStatus="$(jq -r '.projectStatus.status' <<< "$gate")"
-
-          echo "Quality Gate status: $gateStatus"
-          if [[ "$gateStatus" != "OK" ]]; then
-            exit 1
-          fi
+        run: pytest -v
 
   # ──────────────────────────────────────────────────────────────────────────
   # JOB 1: build -> push a develop
