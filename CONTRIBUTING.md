@@ -102,10 +102,16 @@ registry y falla con `not found`. Andá a la pestaña **Actions** del repo y con
 # 1. Iniciar release desde develop
 git flow release start vX.Y.Z
 
-# 2. (opcional) ajustes de ultimo minuto en la rama release/vX.Y.Z
+# 2. Actualizar CHANGELOG.md: mover lo que este bajo [Unreleased] a una
+#    seccion nueva [vX.Y.Z] - AAAA-MM-DD (ver seccion 6 para el detalle),
+#    commitear ese cambio en la propia rama release/vX.Y.Z
+git add CHANGELOG.md
+git commit -m "docs: actualiza changelog para vX.Y.Z"
+
+# 3. (opcional) otros ajustes de ultimo minuto en la rama release/vX.Y.Z
 #    ver la nota en la seccion 2: esos commits no pasan por CI todavia
 
-# 3. Cerrar el release: merge a main + tag + merge de vuelta a develop + borra la rama
+# 4. Cerrar el release: merge a main + tag + merge de vuelta a develop + borra la rama
 git flow release finish -m "Release vX.Y.Z" vX.Y.Z
 ```
 
@@ -166,6 +172,11 @@ git flow hotfix start vX.Y.Z
 git add <archivos>
 git commit -m "fix: descripcion del arreglo"
 
+# 2b. Actualizar CHANGELOG.md: agregar seccion [vX.Y.Z] - AAAA-MM-DD con el
+#     fix bajo ### Fix (ver seccion 6). Un hotfix nunca lleva ### Features.
+git add CHANGELOG.md
+git commit -m "docs: actualiza changelog para vX.Y.Z"
+
 # 3. Publicar la rama (esto dispara build-hotfix en CI, sube :sha-<short>)
 git flow hotfix publish vX.Y.Z
 
@@ -225,3 +236,34 @@ El PR de un hotfix se mergea directo a `main` (nunca pasa por `develop`). Al pus
 commit, el job `promote` lee `HEAD^2` — que en este caso es el tip de `hotfix/vX.Y.Z`, la misma
 imagen que `build-hotfix` ya subió como `:sha-<ese-commit>` — y la promueve a `:latest`. Es
 justo el caso que el fix de `promote` (sección 2) existe para manejar bien.
+
+---
+
+## 6. Changelog (`CHANGELOG.md`)
+
+Cada release (normal u hotfix) tiene que dejar una entrada en `CHANGELOG.md`, en la raíz del
+repo. Formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/):
+
+```markdown
+## [vX.Y.Z] - AAAA-MM-DD
+
+### Features
+- Descripcion corta del endpoint/funcionalidad nueva.
+
+### Fix
+- Descripcion corta del bug corregido y su causa si es relevante.
+
+### Changed
+- Cambios que no son ni feature nueva ni fix (refactors, docs, CI/CD, config).
+```
+
+Reglas:
+- Entradas en orden descendente (más reciente arriba de todo, debajo de `[Unreleased]`).
+- Si una sección no aplica, se omite — no dejar el título vacío.
+- Una línea por cambio, corta, sin detalle de implementación ("Añade X", "Corrige Y").
+- Un release de **hotfix** siempre lleva `### Fix`, nunca `### Features`.
+- Mientras se trabaja en `develop` (features todavía sin release), esos cambios van
+  acumulándose bajo `## [Unreleased]`, arriba de todo. Al cortar el release, esa sección se
+  vacía y su contenido pasa a la sección `[vX.Y.Z]` nueva.
+- Se actualiza **dentro de la rama `release/*` o `hotfix/*`** (ver los pasos 2/2b en las
+  secciones 4 y 5), no después — así el commit del changelog queda parte del mismo release.
