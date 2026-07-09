@@ -72,7 +72,7 @@ def mod_endpoint():
         return jsonify({"error": message}), status
     if b == 0:
         return jsonify({"error": "Cannot divide by zero"}), 400
-    return jsonify({"a": a, "b": b, "operation": "mod", "result": a - b})
+    return jsonify({"a": a, "b": b, "operation": "mod", "result": a % b})
 
 
 @app.route("/health", methods=["GET"])
