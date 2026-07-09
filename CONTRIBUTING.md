@@ -90,6 +90,14 @@ git branch -d feature/división
 
 ## 4. Flujo: release (estando en `develop`)
 
+**Antes de arrancar, un requisito que no queda escrito en ningún lado salvo acá:**
+el merge de tu PR a `develop` dispara el job `Build & Push (develop)`, que sube la imagen
+`:sha-<corto>` a `ghcr.io`. **Ese job tiene que terminar antes** de arrancar el release —
+si arrancás el release (y hacés push a `main`) mientras el build de `develop` todavía está
+corriendo, `promote` va a buscar una imagen `:sha-<HEAD^2>` que todavía no existe en el
+registry y falla con `not found`. Andá a la pestaña **Actions** del repo y confirmá que
+`Build & Push (develop)` esté en verde para el commit del merge antes de seguir.
+
 ```bash
 # 1. Iniciar release desde develop
 git flow release start vX.Y.Z
