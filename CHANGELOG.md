@@ -38,6 +38,15 @@ _(cambios ya en `develop` que todavía no salieron en un release)_
 
 ---
 
+## [v1.5.0] - 2026-07-09
+
+### Changed
+- El job `deploy` ya no dispara en push a `main`: ahora dispara en el evento `release`
+  publicado (`needs: release`) y despliega el tag versionado exacto (`IMAGE_TAG`), nunca
+  `:latest`. Un push a `main` actualiza el registry (`promote`) pero no toca el servidor.
+
+---
+
 ## [v1.4.0] - 2026-07-09
 
 ### Changed
