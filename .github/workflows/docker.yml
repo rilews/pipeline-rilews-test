@@ -9,6 +9,8 @@ name: Build and Push Docker Image (Frontend)
 #   hotfix/**    -> job `build-hotfix`  : sha-<short> unicamente        (build real, SIN tag flotante)
 #   main         -> job `promote`       : latest + sha-<merge-commit>   (promueve SIN rebuild)
 #                                          origen: sha-<HEAD^2> = tip de la rama mergeada
+#   main         -> job `deploy`        : docker compose pull + up -d en servidor LAN
+#                                          via self-hosted runner (needs: promote)
 #   release      -> job `release`       : vX.Y.Z + X.Y.Z                (promueve desde :latest, SIN rebuild)
 #
 # FIX respecto al workflow original:
@@ -216,6 +218,52 @@ jobs:
             --tag ${{ env.IMAGE }}:latest \
             --tag ${{ env.IMAGE }}:sha-${{ steps.merge.outputs.merge }} \
             ${{ env.IMAGE }}:sha-${{ steps.merge.outputs.source }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 3.5: deploy -> push a main, DESPUES de promote
+  #
+  # Corre en runner self-hosted (registrado en la maquina del servidor LAN,
+  # o con acceso de red a el) porque GitHub-hosted runners no alcanzan red
+  # local. No rebuildea: hace pull de :latest (recien promovido) y levanta
+  # el stack con docker compose.
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy (main)
+    if: github.ref == 'refs/heads/main'
+    needs: promote
+    runs-on: [self-hosted, lan-server]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # .env se escribe en cada run desde secrets: el checkout hace
+      # `git clean` por defecto y borraria un .env dejado a mano en el
+      # workspace del runner. Fuente unica de verdad = GitHub Secrets.
+      - name: Escribir .env de produccion
+        run: |
+          cat > calculadora/.env <<EOF
+          PORT=${{ secrets.PROD_PORT || '5000' }}
+          FLASK_DEBUG=false
+          EOF
+
+      - name: Pull imagen recien promovida
+        run: docker compose -f docker-compose.prod.yml pull
+
+      - name: Desplegar (up -d)
+        run: docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+      - name: Limpiar imagenes viejas
+        run: docker image prune -f
 
   # ──────────────────────────────────────────────────────────────────────────
   # JOB 4: release -> evento release published
