@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calculadora</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --border: #d9dce2;
+      --text: #1a1e25;
+      --text-muted: #5b6472;
+      --accent: #2f68d1;
+      --ok: #197a4d;
+      --err: #cf3f27;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0a0d12;
+        --surface: #12161d;
+        --border: #262e3b;
+        --text: #e7ebf1;
+        --text-muted: #8c96a6;
+        --accent: #5b9dff;
+        --ok: #3fc27f;
+        --err: #ff6e5e;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      padding: 1.5rem;
+    }
+    main {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    }
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 650;
+      margin: 0 0 1.25rem;
+    }
+    .row {
+      display: flex;
+      gap: 0.6rem;
+      margin-bottom: 0.9rem;
+    }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+    }
+    .field { flex: 1; }
+    input[type="number"], select {
+      width: 100%;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    input[type="number"]:focus, select:focus, button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    select { margin-bottom: 0.9rem; }
+    button {
+      width: 100%;
+      padding: 0.65rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.6; cursor: default; }
+    #result {
+      margin-top: 1.1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 8px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.92rem;
+      display: none;
+    }
+    #result.ok {
+      display: block;
+      background: color-mix(in srgb, var(--ok) 12%, transparent);
+      color: var(--ok);
+      border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+    }
+    #result.err {
+      display: block;
+      background: color-mix(in srgb, var(--err) 12%, transparent);
+      color: var(--err);
+      border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Calculadora</h1>
+    <form id="calc-form">
+      <div class="row">
+        <div class="field">
+          <label for="a">a</label>
+          <input type="number" id="a" name="a" step="any" required>
+        </div>
+        <div class="field">
+          <label for="b">b</label>
+          <input type="number" id="b" name="b" step="any" required>
+        </div>
+      </div>
+      <label for="operation">Operación</label>
+      <select id="operation" name="operation">
+        <option value="sum">Suma (a + b)</option>
+        <option value="subtract">Resta (a − b)</option>
+        <option value="multiply">Multiplicación (a × b)</option>
+        <option value="divide">División (a ÷ b)</option>
+        <option value="mod">Resto (a % b)</option>
+      </select>
+      <button type="submit">Calcular</button>
+    </form>
+    <div id="result" role="status" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const form = document.getElementById("calc-form");
+    const resultBox = document.getElementById("result");
+    const submitBtn = form.querySelector("button");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const a = document.getElementById("a").value;
+      const b = document.getElementById("b").value;
+      const operation = document.getElementById("operation").value;
+
+      submitBtn.disabled = true;
+      resultBox.className = "";
+      resultBox.textContent = "";
+
+      try {
+        const response = await fetch(`/${operation}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ a, b }),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          resultBox.className = "err";
+          resultBox.textContent = data.error || `Error ${response.status}`;
+        } else {
+          resultBox.className = "ok";
+          resultBox.textContent = `${data.a} ${symbolFor(operation)} ${data.b} = ${data.result}`;
+        }
+      } catch (err) {
+        resultBox.className = "err";
+        resultBox.textContent = "No se pudo conectar con el servidor.";
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    function symbolFor(operation) {
+      return { sum: "+", subtract: "−", multiply: "×", divide: "÷", mod: "%" }[operation] || "?";
+    }
+  </script>
+</body>
+</html>

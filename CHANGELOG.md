@@ -38,6 +38,12 @@ _(cambios ya en `develop` que todavía no salieron en un release)_
 
 ---
 
+## [v1.7] - 2026-07-09
+
+### Changed
+- añade panel para visualizar
+
+---
 ## [v1.6.1] - 2026-07-09
 
 ### Fix
