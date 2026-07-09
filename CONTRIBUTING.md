@@ -26,17 +26,18 @@ Config del repo: `master` está mapeado a `main`.
 
 | Job | Tag | Dispara en | Qué hace |
 |---|---|---|---|
-| `test` | **[CI]** | `pull_request` a `develop`/`main`, y push directo a `develop`/`hotfix/**` | Corre `pytest` sobre `calculadora/`. Gate: si falla, `build`/`build-hotfix` no corren. |
+| `test` | **[CI]** | `pull_request` a `develop`/`main`, y push directo a `develop`/`hotfix/**`/`release/**` | Corre `pytest` sobre `calculadora/`. Gate: si falla, `build`/`build-hotfix`/`build-release` no corren. |
 | `build` | **[CI+CD]** | push a `develop` | Build real (`target: prod`) + push a `ghcr.io` con tags `:develop` y `:sha-<short>`. |
 | `build-hotfix` | **[CI+CD]** | push a `hotfix/**` | Igual que `build`, pero solo tag `:sha-<short>` (sin tag flotante). |
-| `promote` | **[CD]** | push a `main` (merge commit) | Sin rebuild. Copia la imagen correcta (`develop` o el hotfix, según cuál se mergeó) a `:latest`. Ver detalle abajo. |
+| `build-release` | **[CI+CD]** | push a `release/**` | Igual que `build-hotfix`, solo tag `:sha-<short>`. Cubre commits hechos directo en la rama release (ej. el changelog) antes de `finish`. |
+| `promote` | **[CD]** | push a `main` (merge commit) | Sin rebuild. Copia la imagen correcta (`develop`, hotfix o release, según cuál se mergeó) a `:latest`. Ver detalle abajo. |
+| `deploy` | **[CD]** | push a `main`, después de `promote` | Sin rebuild. En runner self-hosted (`lan-server`), `docker compose pull` + `up -d` del stack en el servidor LAN, usando `docker-compose.prod.yml`. |
 | `release` | **[CD]** | evento `release` publicado en GitHub | Sin rebuild. Copia `:latest` a `:vX.Y.Z` y `:X.Y.Z`. |
 
-**Pendiente / no implementado todavía:** no existe un job que corra al pushear una rama `release/**`.
-Si commiteás algo directamente en `release/x.y.z` (ej. un ajuste de último minuto), ese commit
-**no** pasa por `test` ni se buildea — el `promote` posterior puede fallar porque no va a
-encontrar la imagen `:sha-<ese-commit>`. Por ahora, evitar commitear en `release/*`; si hace
-falta, se agrega un trigger `push: branches: ['release/**']` más adelante.
+**Importante:** todo commit hecho directo en `release/x.y.z` (ej. `docs: actualiza changelog para
+vX.Y.Z`) pasa por `test` + `build-release` gracias al trigger `release/**`. Sin esa imagen puntual,
+`promote` fallaría con `not found` al resolver `HEAD^2` en `main` — es justo el commit del
+changelog el que termina siendo la punta de la rama que se mergea.
 
 ### El detalle importante de `promote`
 

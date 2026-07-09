@@ -38,6 +38,15 @@ _(cambios ya en `develop` que todavía no salieron en un release)_
 
 ---
 
+## [v1.4.0] - 2026-07-09
+
+### Changed
+- Añade job `build-release` (push a `release/**`): cierra el gap donde un commit directo en
+  una rama release (ej. el propio changelog) no tenía imagen construida y `promote` fallaba
+  con `not found` al resolver `HEAD^2`.
+  
+---
+
 ## [v1.3.0] - 2026-07-09
 
 ### Changed
