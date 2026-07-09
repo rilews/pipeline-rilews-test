@@ -67,7 +67,10 @@ def test_mod_post(client):
     assert resp.status_code == 200
     assert resp.get_json()["result"] == 1.0
 
-
+def test_divide_by_zero(client):
+    response = client.get("/divide?a=1&b=0")
+    assert response.status_code == 400
+    
 def test_mod_by_zero(client):
     resp = client.get("/mod?a=5&b=0")
     assert resp.status_code == 400
