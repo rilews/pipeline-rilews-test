@@ -38,6 +38,15 @@ _(cambios ya en `develop` que todavía no salieron en un release)_
 
 ---
 
+## [v1.3.0] - 2026-07-09
+
+### Changed
+- Añade job `deploy` al pipeline (`.github/workflows/docker.yml`): tras `promote`, corre en
+  runner self-hosted (`lan-server`) y hace `docker compose pull` + `up -d` contra el servidor
+  en red local, usando `docker-compose.prod.yml` (imagen `:latest` desde `ghcr.io`, sin rebuild).
+
+---
+
 ## [v1.2.1] - 2026-07-09
 
 ### Changed
