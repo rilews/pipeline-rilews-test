@@ -10,9 +10,11 @@ name: Build and Push Docker Image (Frontend)
 #   release/**   -> job `build-release` : sha-<short> unicamente        (build real, SIN tag flotante)
 #   main         -> job `promote`       : latest + sha-<merge-commit>   (promueve SIN rebuild)
 #                                          origen: sha-<HEAD^2> = tip de la rama mergeada
-#   main         -> job `deploy`        : docker compose pull + up -d en servidor LAN
-#                                          via self-hosted runner (needs: promote)
 #   release      -> job `release`       : vX.Y.Z + X.Y.Z                (promueve desde :latest, SIN rebuild)
+#   release      -> job `deploy`        : docker compose pull + up -d en servidor LAN
+#                                          via self-hosted runner (needs: release), despliega
+#                                          SIEMPRE el tag versionado del release recien publicado
+#                                          (nunca :latest)
 #
 # FIX respecto al workflow original:
 #   El job `promote` ya NO asume que el origen es siempre ":develop".
@@ -275,52 +277,6 @@ jobs:
             ${{ env.IMAGE }}:sha-${{ steps.merge.outputs.source }}
 
   # ──────────────────────────────────────────────────────────────────────────
-  # JOB 3.5: deploy -> push a main, DESPUES de promote
-  #
-  # Corre en runner self-hosted (registrado en la maquina del servidor LAN,
-  # o con acceso de red a el) porque GitHub-hosted runners no alcanzan red
-  # local. No rebuildea: hace pull de :latest (recien promovido) y levanta
-  # el stack con docker compose.
-  # ──────────────────────────────────────────────────────────────────────────
-  deploy:
-    name: Deploy (main)
-    if: github.ref == 'refs/heads/main'
-    needs: promote
-    runs-on: [self-hosted, lan-server]
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # .env se escribe en cada run desde secrets: el checkout hace
-      # `git clean` por defecto y borraria un .env dejado a mano en el
-      # workspace del runner. Fuente unica de verdad = GitHub Secrets.
-      - name: Escribir .env de produccion
-        run: |
-          cat > calculadora/.env <<EOF
-          PORT=${{ secrets.PROD_PORT || '5000' }}
-          FLASK_DEBUG=false
-          EOF
-
-      - name: Pull imagen recien promovida
-        run: docker compose -f docker-compose.prod.yml pull
-
-      - name: Desplegar (up -d)
-        run: docker compose -f docker-compose.prod.yml up -d --remove-orphans
-
-      - name: Limpiar imagenes viejas
-        run: docker image prune -f
-
-  # ──────────────────────────────────────────────────────────────────────────
   # JOB 4: release -> evento release published
   # Sin rebuild. Copia manifest :latest -> :vX.Y.Z y :X.Y.Z
   # ──────────────────────────────────────────────────────────────────────────
@@ -357,3 +313,59 @@ jobs:
             --tag ${{ env.IMAGE }}:${{ steps.semver.outputs.vtag }} \
             --tag ${{ env.IMAGE }}:${{ steps.semver.outputs.tag }} \
             ${{ env.IMAGE }}:latest
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 5: deploy -> evento release published, DESPUES de `release`
+  #
+  # Corre en runner self-hosted (registrado en la maquina del servidor LAN,
+  # o con acceso de red a el) porque GitHub-hosted runners no alcanzan red
+  # local. No rebuildea: hace pull del tag versionado (:vX.Y.Z, recien
+  # creado por `release`) y levanta el stack con docker compose.
+  #
+  # Antes disparaba en push a main y desplegaba siempre :latest. Ahora
+  # dispara en el evento `release` (needs: release) y despliega el tag
+  # exacto del ultimo release publicado -- asi el servidor siempre corre
+  # una version identificable y no un puntero flotante.
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy (release)
+    if: github.event_name == 'release'
+    needs: release
+    runs-on: [self-hosted, lan-server]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # .env se escribe en cada run desde secrets: el checkout hace
+      # `git clean` por defecto y borraria un .env dejado a mano en el
+      # workspace del runner. Fuente unica de verdad = GitHub Secrets.
+      - name: Escribir .env de produccion
+        run: |
+          cat > calculadora/.env <<EOF
+          PORT=${{ secrets.PROD_PORT || '5000' }}
+          FLASK_DEBUG=false
+          EOF
+
+      # IMAGE_TAG queda exportada para los pasos siguientes: docker compose
+      # la sustituye en docker-compose.prod.yml (image: ...:${IMAGE_TAG:-latest}).
+      - name: Fijar tag de imagen a desplegar (ultimo release publicado)
+        run: echo "IMAGE_TAG=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+
+      - name: Pull imagen ${{ github.event.release.tag_name }}
+        run: docker compose -f docker-compose.prod.yml pull
+
+      - name: Desplegar (up -d)
+        run: docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+      - name: Limpiar imagenes viejas
+        run: docker image prune -f

@@ -31,13 +31,19 @@ Config del repo: `master` está mapeado a `main`.
 | `build-hotfix` | **[CI+CD]** | push a `hotfix/**` | Igual que `build`, pero solo tag `:sha-<short>` (sin tag flotante). |
 | `build-release` | **[CI+CD]** | push a `release/**` | Igual que `build-hotfix`, solo tag `:sha-<short>`. Cubre commits hechos directo en la rama release (ej. el changelog) antes de `finish`. |
 | `promote` | **[CD]** | push a `main` (merge commit) | Sin rebuild. Copia la imagen correcta (`develop`, hotfix o release, según cuál se mergeó) a `:latest`. Ver detalle abajo. |
-| `deploy` | **[CD]** | push a `main`, después de `promote` | Sin rebuild. En runner self-hosted (`lan-server`), `docker compose pull` + `up -d` del stack en el servidor LAN, usando `docker-compose.prod.yml`. |
 | `release` | **[CD]** | evento `release` publicado en GitHub | Sin rebuild. Copia `:latest` a `:vX.Y.Z` y `:X.Y.Z`. |
+| `deploy` | **[CD]** | evento `release` publicado, después de `release` | Sin rebuild. En runner self-hosted (`lan-server`), `docker compose pull` + `up -d` del stack en el servidor LAN, usando `docker-compose.prod.yml` con `IMAGE_TAG=<tag del release>` — despliega la versión exacta publicada, nunca `:latest`. |
 
 **Importante:** todo commit hecho directo en `release/x.y.z` (ej. `docs: actualiza changelog para
 vX.Y.Z`) pasa por `test` + `build-release` gracias al trigger `release/**`. Sin esa imagen puntual,
 `promote` fallaría con `not found` al resolver `HEAD^2` en `main` — es justo el commit del
 changelog el que termina siendo la punta de la rama que se mergea.
+
+**Deploy solo pasa con un GitHub Release publicado.** Un push a `main` dispara `promote`
+(actualiza `:latest` + `:sha-<merge-commit>` en el registry) pero **no** toca el servidor —
+el servidor solo se actualiza cuando corrés `gh release create vX.Y.Z ...` (ver sección 4).
+Si necesitás el código en el servidor sin cortar un release formal, no hay atajo automático
+todavía; hacelo a mano en el servidor.
 
 ### El detalle importante de `promote`
 
@@ -132,7 +138,8 @@ nada más).
 
 ### Después del release: crear el GitHub Release
 
-Esto dispara el job `release`, que tagea la imagen con el semver:
+Esto dispara el job `release` (tagea la imagen con el semver) y, a continuación, `deploy`
+(despliega ese mismo tag en el servidor LAN):
 
 ```bash
 gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes --target main
