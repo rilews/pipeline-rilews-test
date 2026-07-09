@@ -64,6 +64,17 @@ def divide_endpoint():
     return jsonify({"a": a, "b": b, "operation": "divide", "result": a / b})
 
 
+@app.route("/mod", methods=["GET", "POST"])
+def mod_endpoint():
+    a, b, error = _get_operands()
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    if b == 0:
+        return jsonify({"error": "Cannot divide by zero"}), 400
+    return jsonify({"a": a, "b": b, "operation": "mod", "result": a % b})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
