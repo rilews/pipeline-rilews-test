@@ -56,6 +56,24 @@ def test_multiply_post(client):
     assert resp.status_code == 200
     assert resp.get_json()["result"] == 24.0
 
+def test_mod_get(client):
+    resp = client.get("/mod?a=10&b=3")
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 1.0
+
+
+def test_mod_post(client):
+    resp = client.post("/mod", json={"a": 9, "b": 4})
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 1.0
+
+
+def test_mod_by_zero(client):
+    resp = client.get("/mod?a=5&b=0")
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
