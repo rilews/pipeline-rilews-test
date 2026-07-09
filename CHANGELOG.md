@@ -37,6 +37,14 @@ Reglas simples:
 _(cambios ya en `develop` que todavía no salieron en un release)_
 
 ---
+## [v1.6.0] - 2026-07-09
+
+### Changed
+- Migra el cierre de release/hotfix a flujo PR-only: `git flow release finish` y
+  `git flow hotfix finish` ya no se usan (pushean directo, el ruleset los rechaza).
+  Ahora se cierra con `gh pr create` + `gh pr merge --merge` hacia `main` y `develop`.
+
+---
 
 ## [v1.5.0] - 2026-07-09
 

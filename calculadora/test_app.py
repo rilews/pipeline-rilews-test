@@ -10,6 +10,12 @@ def client():
         yield client
 
 
+def test_index_page(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"Calculadora" in resp.data
+
+
 def test_sum_get(client):
     resp = client.get("/sum?a=5&b=3")
     assert resp.status_code == 200
