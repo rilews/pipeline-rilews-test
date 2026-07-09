@@ -8,6 +8,12 @@ Usamos la extensión [git-flow (AVH Edition)](https://github.com/petervanderdoes
 para los comandos (`git flow feature start`, `git flow release start`, etc).
 Config del repo: `master` está mapeado a `main`.
 
+**`git flow release finish` y `git flow hotfix finish` NO se usan en este repo.** Ambos
+mergean localmente y hacen `git push` directo a `main`/`develop`, y el ruleset de esas ramas
+("Require a pull request before merging") rechaza ese push. Se usa `start`/`publish` de
+git-flow para crear y subir la rama; el cierre real (merge a `main` y a `develop`, tag, borrado
+de rama) se hace a mano vía PR — ver el detalle en las secciones 4 y 5.
+
 ---
 
 ## 1. Ramas y su función
@@ -97,13 +103,19 @@ git branch -d feature/división
 
 ## 4. Flujo: release (estando en `develop`)
 
+**`main` y `develop` tienen un ruleset con "Require a pull request before merging".** Esto
+significa que **`git flow release finish` ya no sirve para publicar** — ese comando mergea
+localmente y hace `git push origin main`/`git push origin develop` directo, y ambos pushes van
+a ser rechazados por el ruleset. Se usa `git flow release start`/`publish` para crear y subir
+la rama, pero el cierre (mergear a `main` y a `develop`) se hace **con PRs**, igual que ya se
+hacía con hotfix.
+
 **Antes de arrancar, un requisito que no queda escrito en ningún lado salvo acá:**
 el merge de tu PR a `develop` dispara el job `Build & Push (develop)`, que sube la imagen
-`:sha-<corto>` a `ghcr.io`. **Ese job tiene que terminar antes** de arrancar el release —
-si arrancás el release (y hacés push a `main`) mientras el build de `develop` todavía está
-corriendo, `promote` va a buscar una imagen `:sha-<HEAD^2>` que todavía no existe en el
-registry y falla con `not found`. Andá a la pestaña **Actions** del repo y confirmá que
-`Build & Push (develop)` esté en verde para el commit del merge antes de seguir.
+`:sha-<corto>` a `ghcr.io`. **Ese job tiene que terminar antes** de abrir el PR del release —
+si el build de `develop` todavía está corriendo, `promote` va a buscar una imagen
+`:sha-<HEAD^2>` que todavía no existe en el registry y falla con `not found`. Andá a la pestaña
+**Actions** del repo y confirmá que `Build & Push (develop)` esté en verde antes de seguir.
 
 ```bash
 # 1. Iniciar release desde develop
@@ -116,25 +128,34 @@ git add CHANGELOG.md
 git commit -m "docs: actualiza changelog para vX.Y.Z"
 
 # 3. (opcional) otros ajustes de ultimo minuto en la rama release/vX.Y.Z
-#    ver la nota en la seccion 2: esos commits no pasan por CI todavia
 
-# 4. Cerrar el release: merge a main + tag + merge de vuelta a develop + borra la rama
-git flow release finish -m "Release vX.Y.Z" vX.Y.Z
+# 4. Publicar la rama (push a origin, NO es rama protegida, esto anda directo)
+#    Dispara test + build-release: confirmar verde en Actions antes de seguir
+git flow release publish vX.Y.Z
 ```
 
-### Cómo pushear el release (el paso que más se presta a confusión)
-
-`git flow release finish` te deja parado en `develop` después de mergear. Un `git push` simple
-ahí **solo sube `develop`** — `main` y el tag quedan sin subir si no lo hacés explícito:
+### Cerrar el release: PR a `main`, tag, PR a `develop`
 
 ```bash
-git push origin main
-git push origin develop
-git push origin --tags
-```
+# 5. PR hacia main (merge commit obligatorio — squash/rebase estan deshabilitados
+#    a nivel repo, asi que --merge es la unica opcion valida)
+gh pr create --base main --head release/vX.Y.Z --title "Release vX.Y.Z"
+gh pr merge release/vX.Y.Z --merge
+# esto dispara `promote` automaticamente al mergear (push a main)
 
-El push a `main` dispara automáticamente el job `promote` (evento `push`, sin necesidad de
-nada más).
+# 6. Tag — los tags no son ramas, no pasan por el ruleset, se pushean directo
+git checkout main && git pull
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin --tags
+
+# 7. Back-merge a develop, tambien por PR (antes era push directo)
+gh pr create --base develop --head release/vX.Y.Z --title "chore: sincroniza vX.Y.Z en develop"
+gh pr merge release/vX.Y.Z --merge
+
+# 8. Limpieza (delete_branch_on_merge esta apagado en el repo, se borra a mano)
+git push origin --delete release/vX.Y.Z
+git branch -d release/vX.Y.Z
+```
 
 ### Después del release: crear el GitHub Release
 
@@ -145,25 +166,22 @@ Esto dispara el job `release` (tagea la imagen con el semver) y, a continuación
 gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes --target main
 ```
 
-Ejemplo real (v1.1.0):
+Ejemplo real (v1.5.0, con este flujo ya migrado a PR):
 
 ```bash
-git flow release start v1.1.0
-git flow release finish -m "Release v1.1.0" v1.1.0
-git push origin main
-git push origin develop
+git flow release start v1.5.0
+# ... editar CHANGELOG.md, commitear ...
+git add CHANGELOG.md && git commit -m "docs: actualiza changelog para v1.5.0"
+git flow release publish v1.5.0
+gh pr create --base main --head release/v1.5.0 --title "Release v1.5.0"
+gh pr merge release/v1.5.0 --merge
+git checkout main && git pull
+git tag -a v1.5.0 -m "Release v1.5.0"
 git push origin --tags
-gh release create v1.1.0 --title "v1.1.0" --generate-notes --target main
-```
-
-Si el `finish` queda a medio camino (pasa a veces: los merges se hacen pero falta el tag o
-no borra la rama `release/*`), completalo a mano:
-
-```bash
-git checkout main
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git branch -d release/vX.Y.Z
-git push origin main && git push origin --tags
+gh pr create --base develop --head release/v1.5.0 --title "chore: sincroniza v1.5.0 en develop"
+gh pr merge release/v1.5.0 --merge
+git push origin --delete release/v1.5.0
+gh release create v1.5.0 --title "v1.5.0" --generate-notes --target main
 ```
 
 ---
@@ -191,33 +209,38 @@ git flow hotfix publish vX.Y.Z
 # 4. PR hacia main — dispara `test` como check requerido antes de mergear
 gh pr create --base main --head hotfix/vX.Y.Z \
   --title "hotfix: vX.Y.Z" --body "Descripcion del fix"
+
+# 5. Mergear (merge commit obligatorio, squash/rebase deshabilitados a nivel repo)
+gh pr merge hotfix/vX.Y.Z --merge
+# esto dispara `promote` automaticamente al mergear (push a main)
 ```
 
 ### Sincronizar el fix de vuelta a develop
 
 Un hotfix arregla `main`, pero si no se propaga a `develop`, el próximo release normal
-reintroduciría el mismo bug. Después de mergear el PR a `main`:
+reintroduciría el mismo bug. `develop` también tiene "Require a pull request before merging"
+en el ruleset, así que este back-merge **también va por PR**, no por push directo:
 
 ```bash
 git checkout main && git pull
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
-
-git checkout develop && git pull
-git merge main
-git push origin develop
-
-git push origin main
 git push origin --tags
 
-# GitHub Release, dispara el job `release`
+# Back-merge a develop por PR (antes era push directo)
+gh pr create --base develop --head hotfix/vX.Y.Z --title "chore: sincroniza hotfix vX.Y.Z en develop"
+gh pr merge hotfix/vX.Y.Z --merge
+
+# GitHub Release, dispara los jobs `release` + `deploy`
 gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes --target main
 
-# Limpieza
-git branch -d hotfix/vX.Y.Z
+# Limpieza (delete_branch_on_merge esta apagado, se borra a mano)
 git push origin --delete hotfix/vX.Y.Z
+git branch -d hotfix/vX.Y.Z
 ```
 
-Ejemplo real de este repo (`/multiply` tenía `a - b` en vez de `a * b`, hotfix v1.1.1):
+Ejemplo real de este repo (`/multiply` tenía `a - b` en vez de `a * b`, hotfix v1.1.1 —
+anterior a la migración a PR-only; con el flujo actual sería igual pero con
+`gh pr merge hotfix/v1.1.1 --merge` en vez de push directo):
 
 ```bash
 git flow hotfix start v1.1.1
@@ -226,16 +249,15 @@ git add calculadora/app.py calculadora/test_app.py
 git commit -m "fix: corrige /multiply para usar multiplicacion (a * b) en vez de resta"
 git flow hotfix publish v1.1.1
 gh pr create --base main --head hotfix/v1.1.1 --title "hotfix: v1.1.1"
-
-# despues de mergear el PR:
+gh pr merge hotfix/v1.1.1 --merge
 git checkout main && git pull
 git tag -a v1.1.1 -m "Release v1.1.1"
-git checkout develop && git pull && git merge main && git push origin develop
-git push origin main
 git push origin --tags
+gh pr create --base develop --head hotfix/v1.1.1 --title "chore: sincroniza hotfix v1.1.1 en develop"
+gh pr merge hotfix/v1.1.1 --merge
 gh release create v1.1.1 --title "v1.1.1" --generate-notes --target main
-git branch -d hotfix/v1.1.1
 git push origin --delete hotfix/v1.1.1
+git branch -d hotfix/v1.1.1
 ```
 
 ### Por qué el hotfix garantiza que se promueve la imagen correcta
