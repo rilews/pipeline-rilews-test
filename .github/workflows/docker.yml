@@ -7,6 +7,7 @@ name: Build and Push Docker Image (Frontend)
 #   develop/hotfix -> job `test`        : pytest sobre calculadora/, gate previo al build
 #   develop      -> job `build`         : develop + sha-<short>         (build real)
 #   hotfix/**    -> job `build-hotfix`  : sha-<short> unicamente        (build real, SIN tag flotante)
+#   release/**   -> job `build-release` : sha-<short> unicamente        (build real, SIN tag flotante)
 #   main         -> job `promote`       : latest + sha-<merge-commit>   (promueve SIN rebuild)
 #                                          origen: sha-<HEAD^2> = tip de la rama mergeada
 #   main         -> job `deploy`        : docker compose pull + up -d en servidor LAN
@@ -25,6 +26,15 @@ name: Build and Push Docker Image (Frontend)
 #   hotfix/xxx). Esa rama ya subio su imagen como ":sha-<HEAD^2>" (jobs
 #   `build` o `build-hotfix`), asi que se promueve ese manifest puntual
 #   en vez de un tag flotante fijo.
+#
+#   Esto asume que TODO commit que pueda terminar siendo HEAD^2 de un merge
+#   a main tiene su imagen ya construida. Un commit hecho directo en una
+#   rama release/x.y.z (ej. el commit que actualiza CHANGELOG.md antes de
+#   `git flow release finish`) es exactamente ese caso: si release/** no
+#   dispara build, `promote` busca ":sha-<ese-commit>" y falla con
+#   "not found". Por eso existe el job `build-release` — mismo patron que
+#   `build-hotfix`, sin tag flotante, solo para tener SIEMPRE una imagen
+#   promovible detras de cada commit de una rama release/**.
 # ============================================================
 
 on:
@@ -33,6 +43,7 @@ on:
       - develop
       - main
       - 'hotfix/**'
+      - 'release/**'
   pull_request:
     branches:
       - develop
@@ -46,13 +57,13 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
-  # JOB 0: test -> corre en develop y hotfix/**, antes de buildear imagen
-  # Gate de CI real: si los tests fallan, `build`/`build-hotfix` no corren
-  # (needs: test) y nunca se sube una imagen rota al registry.
+  # JOB 0: test -> corre en develop, hotfix/** y release/**, antes de buildear imagen
+  # Gate de CI real: si los tests fallan, `build`/`build-hotfix`/`build-release`
+  # no corren (needs: test) y nunca se sube una imagen rota al registry.
   # ──────────────────────────────────────────────────────────────────────────
   test:
     name: Test (calculadora)
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/')
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -158,6 +169,50 @@ jobs:
           tags: ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
           cache-from: type=gha,scope=hotfix
           cache-to: type=gha,mode=max,scope=hotfix
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2.5: build-release -> push a cualquier release/**
+  # Mismo build real que `build-hotfix`. Cubre commits hechos directo en la
+  # rama release/x.y.z (tipico: "docs: actualiza changelog para vX.Y.Z")
+  # antes de `git flow release finish`. Sin esto, ese commit queda sin
+  # imagen y `promote` falla con "not found" al resolver HEAD^2 en main.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-release:
+    name: Build & Push (release)
+    if: startsWith(github.ref, 'refs/heads/release/')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./calculadora
+          file: ./calculadora/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,mode=max,scope=release
 
   # ──────────────────────────────────────────────────────────────────────────
   # JOB 3: promote -> push a main (resultado de un merge commit)

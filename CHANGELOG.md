@@ -44,6 +44,9 @@ _(cambios ya en `develop` que todavía no salieron en un release)_
 - Añade job `deploy` al pipeline (`.github/workflows/docker.yml`): tras `promote`, corre en
   runner self-hosted (`lan-server`) y hace `docker compose pull` + `up -d` contra el servidor
   en red local, usando `docker-compose.prod.yml` (imagen `:latest` desde `ghcr.io`, sin rebuild).
+- Añade job `build-release` (push a `release/**`): cierra el gap donde un commit directo en
+  una rama release (ej. el propio changelog) no tenía imagen construida y `promote` fallaba
+  con `not found` al resolver `HEAD^2`.
 
 ---
 
