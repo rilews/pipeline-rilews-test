@@ -44,6 +44,13 @@ _(cambios ya en `develop` que todavía no salieron en un release)_
 - añade panel para visualizar
 
 ---
+## [v1.6.1] - 2026-07-09
+
+### Fix
+- Corrige mensaje de error en `/divide` por cero ("zeros" → "zero") y agrega test de
+  cobertura faltante (`test_divide_by_zero`).
+
+---
 ## [v1.6.0] - 2026-07-09
 
 ### Changed
