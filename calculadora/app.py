@@ -1,12 +1,17 @@
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config["DEBUG"] = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
+
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
 
 
 def _get_operands():
