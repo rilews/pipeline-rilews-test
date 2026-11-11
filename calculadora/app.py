@@ -80,6 +80,23 @@ def mod_endpoint():
     return jsonify({"a": a, "b": b, "operation": "mod", "result": a % b})
 
 
+@app.route("/power", methods=["GET", "POST"])
+def power_endpoint():
+    a, b, error = _get_operands()
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    if a == 0 and b < 0:
+        return jsonify({"error": "Cannot raise zero to a negative power"}), 400
+    if a < 0 and not b.is_integer():
+        return jsonify({"error": "Negative base requires an integer exponent"}), 400
+    try:
+        result = a**b
+    except OverflowError:
+        return jsonify({"error": "Result is too large"}), 400
+    return jsonify({"a": a, "b": b, "operation": "power", "result": result})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
