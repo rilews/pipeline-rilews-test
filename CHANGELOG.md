@@ -36,6 +36,9 @@ Reglas simples:
 
 _(cambios ya en `develop` que todavía no salieron en un release)_
 
+### Features
+- Añade endpoint `/power` (potencia a^b) con su opción en el panel y tests.
+
 ---
 
 ## [v1.7] - 2026-07-09
