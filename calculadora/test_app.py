@@ -83,6 +83,48 @@ def test_mod_by_zero(client):
     assert "error" in resp.get_json()
 
 
+def test_power_get(client):
+    resp = client.get("/power?a=2&b=3")
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 8.0
+
+
+def test_power_post(client):
+    resp = client.post("/power", json={"a": 9, "b": 0.5})
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 3.0
+
+
+def test_power_negative_exponent(client):
+    resp = client.get("/power?a=2&b=-2")
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == 0.25
+
+
+def test_power_negative_base_integer_exponent(client):
+    resp = client.get("/power?a=-2&b=3")
+    assert resp.status_code == 200
+    assert resp.get_json()["result"] == -8.0
+
+
+def test_power_zero_negative_exponent(client):
+    resp = client.get("/power?a=0&b=-1")
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_power_negative_base_fractional_exponent(client):
+    resp = client.get("/power?a=-8&b=0.5")
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_power_overflow(client):
+    resp = client.get("/power?a=10&b=1000")
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200

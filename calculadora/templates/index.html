@@ -136,6 +136,7 @@
         <option value="multiply">Multiplicación (a × b)</option>
         <option value="divide">División (a ÷ b)</option>
         <option value="mod">Resto (a % b)</option>
+        <option value="power">Potencia (a ^ b)</option>
       </select>
       <button type="submit">Calcular</button>
     </form>
@@ -181,7 +182,7 @@
     });
 
     function symbolFor(operation) {
-      return { sum: "+", subtract: "−", multiply: "×", divide: "÷", mod: "%" }[operation] || "?";
+      return { sum: "+", subtract: "−", multiply: "×", divide: "÷", mod: "%", power: "^" }[operation] || "?";
     }
   </script>
 </body>
